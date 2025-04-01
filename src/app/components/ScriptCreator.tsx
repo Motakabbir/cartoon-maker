@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { createNewScript } from '@/app/actions/script-actions';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFileCirclePlus, faFilm, faGears, faDimensions } from '@fortawesome/free-solid-svg-icons';
+import { faFileCirclePlus, faFilm, faGears, faChartArea } from '@fortawesome/free-solid-svg-icons';
 
 export default function ScriptCreator() {
   const [scriptTitle, setScriptTitle] = useState('');
@@ -94,7 +94,7 @@ export default function ScriptCreator() {
 
             <div>
               <span className="text-sm font-medium text-purple-900 flex items-center gap-2 mb-2">
-                <FontAwesomeIcon icon={faDimensions} className="text-purple-600" />
+                <FontAwesomeIcon icon={faChartArea} className="text-purple-600" />
                 Resolution
               </span>
               <div className="grid grid-cols-2 gap-4">

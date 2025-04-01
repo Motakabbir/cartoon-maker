@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { Script, SceneScript, Dialogue, Action, Scene, Vector3, ActionType, Emotion, ActionParams, VoiceSettings } from '../types/animation';
 import { Character } from '../types/character';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faTrash, faPlay, faCog, faFilm, faComments, faRunning, faSun, faCloud, faClock, faImage, faMagic, faUser, faUserPlus} from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faTrash, faPlay, faCog, faFilm, faComments, faRunning, faSun, faCloud, faClock, faImage, faMagic, faUser, faUserPlus, faExclamationTriangle} from '@fortawesome/free-solid-svg-icons';
 import VideoComposer from './VideoComposer';
 import CharacterCreator from './CharacterCreator';
 import VoiceOverGenerator from './VoiceOverGenerator';
@@ -162,6 +163,14 @@ export default function ScriptEditor() {
       console.error('Failed to create scene:', error);
     }
   };
+  interface SceneData {
+  background?: string;
+  lighting?: string;
+  timeOfDay?: string;
+  weather?: string;
+  duration?: number;
+  backgroundUrl?: string; // Add this property to the type definition
+}
 
   const handleGenerateBackground = async (sceneIndex: number) => {
     const scene = script.scenes[sceneIndex];
@@ -186,12 +195,20 @@ export default function ScriptEditor() {
         scenes: updatedScenes
       }));
 
+      interface SceneData {
+        background?: string;
+        lighting?: string;
+        timeOfDay?: string;
+        weather?: string;
+        duration?: number;
+        backgroundUrl?: string; // Add this property to the type definition
+      }
       await updateSceneData(scene.sceneId, {
         background: scene.background,
         timeOfDay: scene.timeOfDay,
         weather: scene.weather,
         backgroundUrl: backgroundUrl
-      });
+      } as SceneData);
     } catch (error) {
       console.error('Failed to generate background:', error);
       setBackgroundErrors(prev => ({

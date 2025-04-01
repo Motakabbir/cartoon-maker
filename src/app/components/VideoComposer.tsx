@@ -10,6 +10,7 @@ import AnimatedCharacter from './AnimatedCharacter';
 import { renderScene } from '../utils/renderScene';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faVideo, faDownload } from '@fortawesome/free-solid-svg-icons';
+import Image from 'next/image';
 
 export default function VideoComposer() {
   const [scene, setScene] = useState<Scene>({
@@ -17,6 +18,7 @@ export default function VideoComposer() {
     background: 'default',
     lighting: 'natural',
     timeOfDay: 'day',
+    weather: 'clear',
     duration: 60,
     characters: [],
     dialogues: [],
