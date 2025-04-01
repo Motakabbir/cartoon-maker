@@ -3,11 +3,14 @@ export interface Scene {
   background: string;
   lighting: 'natural' | 'studio' | 'dramatic' | 'dark';
   timeOfDay: 'day' | 'night' | 'sunset' | 'sunrise';
+  weather: Weather;
   duration: number;
   characters: SceneCharacter[];
   dialogues: Dialogue[];
   actions: Action[];
 }
+
+export type Weather = 'clear' | 'cloudy' | 'rain' | 'snow' | 'foggy' | 'stormy';
 
 export interface SceneCharacter {
   characterId: string;
@@ -52,21 +55,41 @@ export interface Action {
 
 export type ActionType = 'move' | 'rotate' | 'scale' | 'gesture' | 'expression' | 'lipsync';
 
-export interface ActionParams {
-  from: number | Vector3;
-  to: number | Vector3;
+export interface BaseActionParams {
   easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
 }
 
-export interface GestureParams extends ActionParams {
-  gesture: 'wave' | 'point' | 'clap' | 'jump' | 'dance';
-  intensity: number;
+export interface TransformActionParams extends BaseActionParams {
+  from: Vector3;
+  to: Vector3;
 }
 
-export interface ExpressionParams extends ActionParams {
-  expression: Emotion;
-  intensity: number;
+export interface ScaleActionParams extends BaseActionParams {
+  from: number;
+  to: number;
 }
+
+export interface GestureActionParams extends BaseActionParams {
+  gesture: 'wave' | 'point' | 'clap' | 'jump' | 'dance' | 'spin';
+  intensity?: number;
+}
+
+export interface ExpressionActionParams extends BaseActionParams {
+  expression: Emotion;
+  intensity?: number;
+}
+
+export interface LipsyncActionParams extends BaseActionParams {
+  from: number;
+  to: number;
+}
+
+export type ActionParams = 
+  | TransformActionParams 
+  | ScaleActionParams 
+  | GestureActionParams 
+  | ExpressionActionParams 
+  | LipsyncActionParams;
 
 export interface Resolution {
   width: number;
@@ -84,6 +107,5 @@ export interface Script {
 
 export interface SceneScript extends Omit<Scene, 'id'> {
   sceneId: string;
-  weather: 'clear' | 'rain' | 'snow' | 'cloudy';
   backgroundUrl?: string;
 }

@@ -24,6 +24,7 @@ export default function Home() {
 
   const handleCharacterCreated = (newCharacter: Character) => {
     setCharacter(newCharacter);
+    setActiveTab('script'); // Automatically move to script tab after character creation
   };
 
   const handleVoiceSettingsChange = (settings: VoiceSettings) => {
@@ -43,55 +44,61 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen p-4">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6">AI Cartoon Creator</h1>
-        <div className="mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8">
-              <button
-                onClick={() => setActiveTab('character')}
-                className={`py-2 px-1 border-b-2 ${
-                  activeTab === 'character'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Character Creation
-              </button>
-              <button
-                onClick={() => setActiveTab('script')}
-                className={`py-2 px-1 border-b-2 ${
-                  activeTab === 'script'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Script Editor
-              </button>
-              <button
-                onClick={() => setActiveTab('voice')}
-                className={`py-2 px-1 border-b-2 ${
-                  activeTab === 'voice'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Voice Over
-              </button>
-            </nav>
-          </div>
+    <main className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
+      {/* Hero Section */}
+      <div className="relative overflow-hidden bg-purple-600 text-white">
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[url('/assets/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]"></div>
         </div>
-        {activeTab === 'character' && <CharacterCreator onCharacterCreated={handleCharacterCreated} />}
-        {activeTab === 'script' && <ScriptEditor />}
-        {activeTab === 'voice' && (
-          <VoiceOverGenerator
-            dialogue={dialogue}
-            onVoiceSettingsChange={handleVoiceSettingsChange}
-            onPreview={handleVoicePreview}
-            onGenerate={handleVoiceGenerate}
-          />
-        )}
+        <div className="relative max-w-6xl mx-auto px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white to-purple-200">
+            AI Cartoon Creator
+          </h1>
+          <p className="text-lg sm:text-xl lg:text-2xl max-w-2xl text-purple-100">
+            Create stunning animated cartoons with AI-powered character generation, scene composition, and voice synthesis.
+          </p>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        {/* Navigation Tabs */}
+        <div className="mb-8">
+          <nav className="flex space-x-1 rounded-lg bg-purple-100/50 p-1" aria-label="Tabs">
+            {[
+              { id: 'character', label: 'Character Creation' },
+              { id: 'script', label: 'Script Editor' },
+              { id: 'voice', label: 'Voice Over' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                className={`w-full rounded-md py-2.5 px-3 text-sm font-medium leading-5 ${
+                  activeTab === tab.id
+                    ? 'bg-white text-purple-700 shadow'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-white/50'
+                } transition-all duration-200`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* Content Area */}
+        <div className="bg-white rounded-2xl shadow-sm border border-purple-100/50 p-6">
+          {activeTab === 'character' && (
+            <CharacterCreator onCharacterCreated={handleCharacterCreated} />
+          )}
+          {activeTab === 'script' && <ScriptEditor />}
+          {activeTab === 'voice' && (
+            <VoiceOverGenerator
+              dialogue={dialogue}
+              onVoiceSettingsChange={handleVoiceSettingsChange}
+              onPreview={handleVoicePreview}
+              onGenerate={handleVoiceGenerate}
+            />
+          )}
+        </div>
       </div>
     </main>
   );

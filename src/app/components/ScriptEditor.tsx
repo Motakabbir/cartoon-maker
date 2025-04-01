@@ -1,15 +1,17 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Script, SceneScript, Dialogue, Action, Scene, Vector3, ActionType, Emotion } from '../types/animation';
+import { Script, SceneScript, Dialogue, Action, Scene, Vector3, ActionType, Emotion, ActionParams, VoiceSettings } from '../types/animation';
 import { Character } from '../types/character';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faPlus, faTrash, faPlay, faCog, faFilm, faComments, faRunning, faSun, faCloud, faClock, faImage, faMagic, faUser, faUserPlus} from '@fortawesome/free-solid-svg-icons';
 import VideoComposer from './VideoComposer';
 import CharacterCreator from './CharacterCreator';
 import VoiceOverGenerator from './VoiceOverGenerator';
 import SceneTimeline from './SceneTimeline';
 import { generateBackground } from '../services/aiService';
 import { initializeNewScript } from '@/app/actions/script-actions';
-import { createScene, createDialogue, createAction, updateScript, getSceneWithDetails } from '@/lib/database-helpers';
+import { addScene, addAction, removeAction, addDialogue, removeDialogue, updateSceneData } from '@/app/actions/scene-actions';
 
 // Type conversion helpers
 const parseJsonValue = <T,>(value: any): T => {
@@ -23,56 +25,16 @@ const parseJsonValue = <T,>(value: any): T => {
   return value as T;
 };
 
-interface DbCharacterModel {
-  features?: {
-    face?: {
-      eyes?: string;
-      nose?: string;
-      mouth?: string;
-      hairstyle?: string;
-      skinTone?: string;
-    };
-    outfit?: {
-      type?: string;
-      color?: string;
-      accessories?: string[];
-    };
-    expression?: Emotion;
-  };
-  imageUrl?: string;
-  animation?: {
-    currentPose?: string;
-    currentExpression?: Emotion;
-  };
-}
-
-const convertDbCharacterToAppCharacter = (dbCharacter: any): Character => {
-  const model = parseJsonValue<DbCharacterModel>(dbCharacter.model) || {};
-  return {
-    id: dbCharacter.id,
-    name: dbCharacter.name,
-    imageUrl: model.imageUrl || '',
-    features: {
-      face: {
-        eyes: model.features?.face?.eyes || 'normal',
-        nose: model.features?.face?.nose || 'normal',
-        mouth: model.features?.face?.mouth || 'neutral',
-        hairstyle: model.features?.face?.hairstyle || 'normal',
-        skinTone: model.features?.face?.skinTone || 'medium'
-      },
-      outfit: {
-        type: model.features?.outfit?.type || 'casual',
-        color: model.features?.outfit?.color || 'neutral',
-        accessories: model.features?.outfit?.accessories || []
-      },
-      expression: model.features?.expression || 'neutral'
-    },
-    animation: {
-      currentPose: model.animation?.currentPose || 'idle',
-      currentExpression: model.animation?.currentExpression || 'neutral'
-    }
-  };
-};
+const convertDbCharacterToAppCharacter = (dbCharacter: any): Character => ({
+  id: dbCharacter.id,
+  name: dbCharacter.name,
+  features: JSON.parse(dbCharacter.model).features,
+  imageUrl: JSON.parse(dbCharacter.model).imageUrl,
+  animation: {
+    currentPose: JSON.parse(dbCharacter.model).animation?.currentPose || 'idle',
+    currentExpression: JSON.parse(dbCharacter.model).animation?.currentExpression || 'neutral'
+  }
+});
 
 const convertDbSceneToAppScene = (dbScene: any): SceneScript => ({
   sceneId: dbScene.id,
@@ -81,7 +43,7 @@ const convertDbSceneToAppScene = (dbScene: any): SceneScript => ({
     id: d.id,
     characterId: d.characterId,
     text: d.text,
-    emotion: d.emotion as Emotion,
+    emotion: d.emotion,
     voiceSettings: parseJsonValue(d.voiceSettings),
     startTime: d.startTime ?? undefined,
     duration: d.duration ?? undefined
@@ -95,14 +57,14 @@ const convertDbSceneToAppScene = (dbScene: any): SceneScript => ({
     duration: a.duration
   })) || [],
   background: dbScene.background,
-  lighting: dbScene.lighting as 'natural' | 'studio' | 'dramatic' | 'dark',
-  timeOfDay: dbScene.timeOfDay as 'day' | 'night' | 'sunset' | 'sunrise',
-  weather: dbScene.weather as 'clear' | 'rain' | 'snow' | 'cloudy',
+  lighting: dbScene.lighting,
+  timeOfDay: dbScene.timeOfDay,
+  weather: dbScene.weather,
   backgroundUrl: dbScene.backgroundUrl,
   characters: dbScene.characters?.map((c: any) => ({
     characterId: c.characterId,
-    position: parseJsonValue<Vector3>(c.position),
-    rotation: parseJsonValue<Vector3>(c.rotation),
+    position: parseJsonValue(c.position),
+    rotation: parseJsonValue(c.rotation),
     scale: c.scale
   })) || []
 });
@@ -116,13 +78,10 @@ export default function ScriptEditor() {
     fps: 30
   });
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [selectedSceneIndex, setSelectedSceneIndex] = useState<number | null>(null);
-  const [showCharacterCreator, setShowCharacterCreator] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [generatingBackground, setGeneratingBackground] = useState<{ [key: string]: boolean }>({});
-  const [backgroundErrors, setBackgroundErrors] = useState<{ [key: string]: string }>({});
+  const [selectedSceneIndex, setSelectedSceneIndex] = useState<number | null>(null);
+  const [generatingBackground, setGeneratingBackground] = useState<Record<number, boolean>>({});
+  const [backgroundErrors, setBackgroundErrors] = useState<Record<number, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -138,43 +97,15 @@ export default function ScriptEditor() {
         setSaveError('Failed to initialize script');
       }
     };
-    
     initializeEditor();
   }, []);
 
-  const addScene = async () => {
-    try {
-      const newScene = await createScene({
-        scriptId: script.id,
-        background: '',
-        lighting: 'natural',
-        timeOfDay: 'day',
-        weather: 'clear',
-        duration: 5.0,
-        order: script.scenes.length + 1
-      });
-
-      const sceneWithDetails = await getSceneWithDetails(newScene.id);
-      
-      if (sceneWithDetails) {
-        const newSceneScript = convertDbSceneToAppScene(sceneWithDetails);
-        setScript((prev: Script) => ({
-          ...prev,
-          scenes: [...prev.scenes, newSceneScript]
-        }));
-      }
-    } catch (error) {
-      console.error('Failed to create scene:', error);
-    }
-  };
-
-  // Update the handleTimeChange to work with scene IDs
   const handleTimeChange = useCallback((time: number) => {
     setCurrentTime(time);
   }, []);
 
   // Update SceneTimeline integration
-  const handleSceneUpdate = async (updatedScene: Scene) => {
+  const handleSceneUpdate = async (updatedScene: Partial<SceneScript>) => {
     if (selectedSceneIndex === null) return;
 
     const updatedScenes = [...script.scenes];
@@ -187,140 +118,58 @@ export default function ScriptEditor() {
       ...prev,
       scenes: updatedScenes
     }));
-  };
 
-  const handleCharacterCreated = (character: Character) => {
-    setCharacters(prev => [...prev, character]);
-    setShowCharacterCreator(false);
-  };
-
-  useEffect(() => {
-    let animationFrame: number;
-    const updateTime = (timestamp: number) => {
-      if (isPlaying) {
-        setCurrentTime(time => {
-          const newTime = time + (playbackRate * (1 / 60));
-          const totalDuration = script.scenes.reduce((acc: number, scene: SceneScript) => acc + scene.duration, 0);
-          if (newTime >= totalDuration) {
-            setIsPlaying(false);
-            return totalDuration;
-          }
-          return newTime;
+    if (updatedScene.background !== undefined || 
+        updatedScene.lighting !== undefined || 
+        updatedScene.timeOfDay !== undefined || 
+        updatedScene.weather !== undefined || 
+        updatedScene.duration !== undefined) {
+      try {
+        await updateSceneData(updatedScene.sceneId!, {
+          background: updatedScene.background,
+          lighting: updatedScene.lighting,
+          timeOfDay: updatedScene.timeOfDay,
+          weather: updatedScene.weather,
+          duration: updatedScene.duration
         });
-        animationFrame = requestAnimationFrame(updateTime);
+      } catch (error) {
+        console.error('Failed to update scene:', error);
       }
-    };
-
-    if (isPlaying) {
-      animationFrame = requestAnimationFrame(updateTime);
-    }
-
-    return () => {
-      if (animationFrame) {
-        cancelAnimationFrame(animationFrame);
-      }
-    };
-  }, [isPlaying, playbackRate, script.scenes]);
-
-  // Update the script state with the current time and total duration
-  useEffect(() => {
-    const totalDuration = script.scenes.reduce((acc: number, scene: SceneScript) => acc + scene.duration, 0);
-    setScript((prev: Script) => ({
-      ...prev,
-      duration: totalDuration
-    }));
-  }, [script.scenes]);
-
-  const addDialogue = async (sceneIndex: number) => {
-    const newDialogue = {
-      characterId: '',
-      text: '',
-      emotion: 'neutral' as Emotion,
-      voiceSettings: {
-        voice: 'default',
-        pitch: 1,
-        speed: 1
-      }
-    };
-
-    try {
-      const dialogue = await createDialogue({
-        sceneId: script.scenes[sceneIndex].sceneId,
-        characterId: newDialogue.characterId,
-        text: newDialogue.text,
-        emotion: newDialogue.emotion,
-        voiceSettings: newDialogue.voiceSettings
-      });
-
-      const convertedDialogue: Dialogue = {
-        id: dialogue.id,
-        characterId: dialogue.characterId,
-        text: dialogue.text,
-        emotion: dialogue.emotion as Emotion,
-        voiceSettings: parseJsonValue(dialogue.voiceSettings),
-        startTime: dialogue.startTime ?? undefined,
-        duration: dialogue.duration ?? undefined
-      };
-
-      const updatedScenes = [...script.scenes];
-      updatedScenes[sceneIndex].dialogues.push(convertedDialogue);
-      setScript(prev => ({
-        ...prev,
-        scenes: updatedScenes
-      }));
-    } catch (error) {
-      console.error('Failed to add dialogue:', error);
     }
   };
 
-  const addAction = async (sceneIndex: number) => {
-    const newAction = {
-      characterId: '',
-      type: 'move' as ActionType,
-      params: {
-        from: { x: 0, y: 0, z: 0 },
-        to: { x: 0, y: 0, z: 0 }
-      },
-      startTime: 0,
-      duration: 1
-    };
-
+  const addSceneToScript = async () => {
     try {
-      const action = await createAction({
-        sceneId: script.scenes[sceneIndex].sceneId,
-        characterId: newAction.characterId,
-        type: newAction.type,
-        params: newAction.params,
-        startTime: newAction.startTime,
-        duration: newAction.duration
+      const newScene = await addScene({
+        scriptId: script.id,
+        background: '',
+        lighting: 'natural',
+        timeOfDay: 'day',
+        weather: 'clear',
+        duration: 5.0,
+        order: script.scenes.length + 1
       });
 
-      const convertedAction: Action = {
-        id: action.id,
-        characterId: action.characterId,
-        type: action.type as ActionType,
-        params: parseJsonValue(action.params),
-        startTime: action.startTime,
-        duration: action.duration
-      };
-
-      const updatedScenes = [...script.scenes];
-      updatedScenes[sceneIndex].actions.push(convertedAction);
-      setScript(prev => ({
-        ...prev,
-        scenes: updatedScenes
-      }));
+      if (newScene) {
+        const newSceneScript = convertDbSceneToAppScene(newScene);
+        setScript(prev => ({
+          ...prev,
+          scenes: [...prev.scenes, newSceneScript]
+        }));
+        setSelectedSceneIndex(script.scenes.length);
+      }
     } catch (error) {
-      console.error('Failed to add action:', error);
+      console.error('Failed to create scene:', error);
     }
   };
 
-  const handleGenerateBackground = async (sceneIndex: number, scene: SceneScript) => {
+  const handleGenerateBackground = async (sceneIndex: number) => {
+    const scene = script.scenes[sceneIndex];
     setGeneratingBackground(prev => ({ ...prev, [sceneIndex]: true }));
     setBackgroundErrors(prev => ({ ...prev, [sceneIndex]: '' }));
     
     try {
-      const generatedBackground = await generateBackground(
+      const backgroundUrl = await generateBackground(
         scene.background,
         scene.timeOfDay,
         scene.weather
@@ -328,402 +177,298 @@ export default function ScriptEditor() {
 
       const updatedScenes = [...script.scenes];
       updatedScenes[sceneIndex] = {
-        ...updatedScenes[sceneIndex],
-        backgroundUrl: generatedBackground
+        ...scene,
+        backgroundUrl: backgroundUrl
       };
-      setScript(prev => ({ ...prev, scenes: updatedScenes }));
-      
+
+      setScript(prev => ({
+        ...prev,
+        scenes: updatedScenes
+      }));
+
+      await updateSceneData(scene.sceneId, {
+        background: scene.background,
+        timeOfDay: scene.timeOfDay,
+        weather: scene.weather,
+        backgroundUrl: backgroundUrl
+      });
     } catch (error) {
-      console.error('Error generating background:', error);
+      console.error('Failed to generate background:', error);
       setBackgroundErrors(prev => ({
         ...prev,
-        [sceneIndex]: 'Failed to generate background. Please try again.'
+        [sceneIndex]: 'Failed to generate background'
       }));
     } finally {
       setGeneratingBackground(prev => ({ ...prev, [sceneIndex]: false }));
     }
   };
 
-  // Auto-save effect
-  useEffect(() => {
-    const saveTimeout = setTimeout(async () => {
-      if (!script.id || isSaving) return;
-      
-      setIsSaving(true);
-      setSaveError(null);
-      
-      try {
-        await updateScript(script.id, {
-          title: script.title || 'Untitled Script',
-          fps: script.fps,
-          resolution: script.resolution
-        });
-      } catch (error) {
-        console.error('Failed to auto-save script:', error);
-        setSaveError('Failed to save changes. Please try again.');
-      } finally {
-        setIsSaving(false);
-      }
-    }, 1000); // Debounce for 1 second
-
-    return () => clearTimeout(saveTimeout);
-  }, [script, isSaving]);
-
-  // Add save status indicator to the UI
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex justify-between items-center p-4 bg-white border-b">
-        <h1 className="text-2xl font-bold">AI Video Creator</h1>
-        <div className="flex items-center gap-4">
-          {isSaving && (
-            <span className="text-gray-500 text-sm">Saving...</span>
-          )}
-          {saveError && (
-            <span className="text-red-500 text-sm">{saveError}</span>
-          )}
-          <button
-            onClick={() => setShowCharacterCreator(true)}
-            className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-          >
-            Create Character
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-12 gap-4 p-4">
-        {/* Script Editor Panel */}
-        <div className="col-span-8 space-y-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Script Editor</h2>
-            <button
-              onClick={addScene}
-              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-            >
-              Add Scene
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            {script.scenes.map((scene, sceneIndex) => (
-              <div 
-                key={scene.sceneId} 
-                className={`border rounded p-4 ${selectedSceneIndex === sceneIndex ? 'border-blue-500' : ''}`}
-                onClick={() => setSelectedSceneIndex(sceneIndex)}
-              >
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold">Scene {sceneIndex + 1}</h3>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => addDialogue(sceneIndex)}
-                      className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
-                    >
-                      Add Dialogue
-                    </button>
-                    <button
-                      onClick={() => addAction(sceneIndex)}
-                      className="px-3 py-1 bg-purple-500 text-white rounded text-sm hover:bg-purple-600"
-                    >
-                      Add Action
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Background</label>
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        placeholder="Describe the scene background..."
-                        className="w-full p-2 border rounded"
-                        value={scene.background}
-                        onChange={(e) => {
-                          const updatedScenes = [...script.scenes];
-                          updatedScenes[sceneIndex].background = e.target.value;
-                          setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                        }}
-                      />
-                      <div className="flex gap-2">
-                        <select
-                          className="p-2 border rounded flex-1"
-                          value={scene.timeOfDay}
-                          onChange={(e) => {
-                            const updatedScenes = [...script.scenes];
-                            updatedScenes[sceneIndex].timeOfDay = e.target.value as any;
-                            setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                          }}
-                        >
-                          <option value="day">Day</option>
-                          <option value="night">Night</option>
-                          <option value="dawn">Dawn</option>
-                          <option value="dusk">Dusk</option>
-                        </select>
-                        <select
-                          className="p-2 border rounded flex-1"
-                          value={scene.weather}
-                          onChange={(e) => {
-                            const updatedScenes = [...script.scenes];
-                            updatedScenes[sceneIndex].weather = e.target.value as any;
-                            setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                          }}
-                        >
-                          <option value="clear">Clear</option>
-                          <option value="rain">Rain</option>
-                          <option value="snow">Snow</option>
-                          <option value="cloudy">Cloudy</option>
-                        </select>
-                      </div>
-                      <button
-                        onClick={() => handleGenerateBackground(sceneIndex, scene)}
-                        disabled={generatingBackground[sceneIndex] || !scene.background}
-                        className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      >
-                        {generatingBackground[sceneIndex] ? (
-                          <span className="flex items-center gap-2">
-                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                              <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                              />
-                            </svg>
-                            Generating...
-                          </span>
-                        ) : (
-                          'Generate Background'
-                        )}
-                      </button>
-                      {backgroundErrors[sceneIndex] && (
-                        <p className="text-red-500 text-sm mt-1">{backgroundErrors[sceneIndex]}</p>
-                      )}
-                      {scene.backgroundUrl && (
-                        <div className="relative h-32 rounded overflow-hidden">
-                          <img
-                            src={scene.backgroundUrl}
-                            alt="Scene background"
-                            className="absolute inset-0 w-full h-full object-cover"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Duration (seconds)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      className="w-full p-2 border rounded"
-                      value={scene.duration}
-                      onChange={(e) => {
-                        const updatedScenes = [...script.scenes];
-                        updatedScenes[sceneIndex].duration = Number(e.target.value);
-                        setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">Dialogues</h4>
-                    {scene.dialogues.map((dialogue, dialogueIndex) => (
-                      <div key={dialogueIndex} className="mb-2 p-3 bg-gray-50 rounded flex flex-col">
-                        <div className="flex justify-between items-start mb-2">
-                          <select
-                            className="w-full p-2 mb-2 border rounded mr-2"
-                            value={dialogue.characterId}
-                            onChange={(e) => {
-                              const updatedScenes = [...script.scenes];
-                              updatedScenes[sceneIndex].dialogues[dialogueIndex].characterId = e.target.value;
-                              setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                            }}
-                          >
-                            <option value="">Select Character</option>
-                            {characters.map(char => (
-                              <option key={char.id} value={char.id}>{char.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => {
-                              const updatedScenes = [...script.scenes];
-                              updatedScenes[sceneIndex].dialogues.splice(dialogueIndex, 1);
-                              setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                            }}
-                            className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
-                          >
-                            Delete
-                          </button>
-                        </div>
-
-                        <textarea
-                          placeholder="Enter dialogue..."
-                          className="w-full p-2 border rounded mb-2"
-                          value={dialogue.text}
-                          onChange={(e) => {
-                            const updatedScenes = [...script.scenes];
-                            updatedScenes[sceneIndex].dialogues[dialogueIndex].text = e.target.value;
-                            setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                          }}
-                        />
-
-                        <select
-                          className="w-full p-2 border rounded"
-                          value={dialogue.emotion}
-                          onChange={(e) => {
-                            const updatedScenes = [...script.scenes];
-                            updatedScenes[sceneIndex].dialogues[dialogueIndex].emotion = e.target.value as 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised';
-                            setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                          }}
-                        >
-                          <option value="neutral">Neutral</option>
-                          <option value="happy">Happy</option>
-                          <option value="sad">Sad</option>
-                          <option value="angry">Angry</option>
-                          <option value="surprised">Surprised</option>
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">Actions</h4>
-                    {scene.actions.map((action, actionIndex) => (
-                      <div key={actionIndex} className="mb-2 p-3 bg-gray-50 rounded flex flex-col">
-                        <div className="flex justify-between items-start mb-2">
-                          <select
-                            className="w-full p-2 mb-2 border rounded mr-2"
-                            value={action.characterId}
-                            onChange={(e) => {
-                              const updatedScenes = [...script.scenes];
-                              updatedScenes[sceneIndex].actions[actionIndex].characterId = e.target.value;
-                              setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                            }}
-                          >
-                            <option value="">Select Character</option>
-                            {characters.map(char => (
-                              <option key={char.id} value={char.id}>{char.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => {
-                              const updatedScenes = [...script.scenes];
-                              updatedScenes[sceneIndex].actions.splice(actionIndex, 1);
-                              setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                            }}
-                            className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
-                          >
-                            Delete
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <select
-                            className="p-2 border rounded"
-                            value={action.type}
-                            onChange={(e) => {
-                              const updatedScenes = [...script.scenes];
-                              updatedScenes[sceneIndex].actions[actionIndex].type = e.target.value as any;
-                              setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                            }}
-                          >
-                            <option value="move">Move</option>
-                            <option value="rotate">Rotate</option>
-                            <option value="gesture">Gesture</option>
-                            <option value="expression">Expression</option>
-                          </select>
-
-                          <input
-                            type="number"
-                            min="0.1"
-                            step="0.1"
-                            placeholder="Duration (s)"
-                            className="p-2 border rounded"
-                            value={action.duration}
-                            onChange={(e) => {
-                              const updatedScenes = [...script.scenes];
-                              updatedScenes[sceneIndex].actions[actionIndex].duration = Number(e.target.value);
-                              setScript(prev => ({ ...prev, scenes: updatedScenes }));
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-          </div>
-        </div>
-
-        {/* Timeline Panel */}
-        <div className="col-span-12">
-          <SceneTimeline
-            scene={selectedSceneIndex !== null ? {
-              ...script.scenes[selectedSceneIndex],
-              id: script.scenes[selectedSceneIndex].sceneId
-            } : {
-              id: '',
-              background: '',
-              lighting: 'natural',
-              timeOfDay: 'day',
-              characters: [],
-              dialogues: [],
-              actions: [],
-              duration: 0
-            }}
-            duration={selectedSceneIndex !== null ? script.scenes[selectedSceneIndex].duration : 0}
-            currentTime={currentTime}
-            onTimeUpdate={handleTimeChange}
-            onSceneUpdate={handleSceneUpdate}
-          />
-        </div>
-
-        {/* Preview Panel */}
-        <div className="col-span-4 space-y-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setIsPlaying(!isPlaying)}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              >
-                {isPlaying ? 'Pause' : 'Play'}
-              </button>
-              <select
-                value={playbackRate}
-                onChange={(e) => setPlaybackRate(Number(e.target.value))}
-                className="p-2 border rounded"
-              >
-                <option value="0.5">0.5x</option>
-                <option value="1">1x</option>
-                <option value="1.5">1.5x</option>
-                <option value="2">2x</option>
-              </select>
+    <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
+      <header className="bg-white shadow-sm border-b border-purple-100 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-bold text-purple-900 flex items-center gap-2">
+              <FontAwesomeIcon icon={faFilm} className="text-purple-600" />
+              Script Editor
+            </h1>
+            <div className="flex items-center gap-4">
+              {isSaving && <span className="text-purple-500 text-sm">Saving...</span>}
+              {saveError && <span className="text-red-500 text-sm">{saveError}</span>}
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Character Creator Modal */}
-      {showCharacterCreator && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-4">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">Create Character</h2>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-12 gap-6">
+          {/* Main Content - Scene Editor */}
+          <div className="col-span-8">
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-purple-900">Scenes</h2>
                 <button
-                  onClick={() => setShowCharacterCreator(false)}
-                  className="text-gray-500 hover:text-gray-700"
+                  onClick={addSceneToScript}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 flex items-center gap-2 hover:shadow-lg transform hover:-translate-y-0.5"
                 >
-                  ✕
+                  <FontAwesomeIcon icon={faPlus} />
+                  Add Scene
                 </button>
               </div>
-              <CharacterCreator onCharacterCreated={handleCharacterCreated} />
+
+              <div className="space-y-6">
+                {script.scenes.map((scene, sceneIndex) => (
+                  <div 
+                    key={scene.sceneId} 
+                    className={`border border-purple-100 rounded-lg p-4 transition-all duration-200 ${
+                      selectedSceneIndex === sceneIndex
+                        ? 'bg-purple-50 border-purple-300 shadow-md'
+                        : 'hover:border-purple-200 hover:shadow-sm'
+                    }`}
+                    onClick={() => setSelectedSceneIndex(sceneIndex)}
+                  >
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold text-purple-900 flex items-center gap-2">
+                        <FontAwesomeIcon icon={faFilm} className="text-purple-600" />
+                        Scene {sceneIndex + 1}
+                      </h3>
+                    </div>
+
+                    <div className="space-y-6">
+                      {/* Background Section */}
+                      <div className="bg-white p-4 rounded-lg border border-purple-100">
+                        <label className="text-sm font-medium text-purple-900 mb-2 flex items-center gap-2">
+                          <FontAwesomeIcon icon={faImage} />
+                          Background
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Describe the scene background..."
+                            className="flex-1 p-2.5 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            value={scene.background}
+                            onChange={(e) => {
+                              const updatedScenes = [...script.scenes];
+                              updatedScenes[sceneIndex].background = e.target.value;
+                              setScript(prev => ({
+                                ...prev,
+                                scenes: updatedScenes
+                              }));
+                            }}
+                          />
+                          <button
+                            onClick={() => handleGenerateBackground(sceneIndex)}
+                            className={`px-4 py-2 text-white rounded-lg transition-all duration-200 flex items-center gap-2 min-w-[160px] ${
+                              generatingBackground[sceneIndex]
+                                ? 'bg-purple-400 cursor-not-allowed'
+                                : 'bg-purple-600 hover:bg-purple-700 hover:shadow-lg transform hover:-translate-y-0.5'
+                            }`}
+                            disabled={generatingBackground[sceneIndex]}
+                          >
+                            {generatingBackground[sceneIndex] ? (
+                              <>
+                                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                                <span>Generating...</span>
+                              </>
+                            ) : (
+                              <>
+                                <FontAwesomeIcon icon={faMagic} />
+                                Generate
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        {backgroundErrors[sceneIndex] && (
+                          <p className="text-red-500 text-sm mt-1 flex items-center gap-1">
+                            <FontAwesomeIcon icon={faExclamationTriangle} />
+                            {backgroundErrors[sceneIndex]}
+                          </p>
+                        )}
+
+                        {scene.backgroundUrl && (
+                          <div className="mt-4 relative h-48 rounded-lg overflow-hidden group">
+                            <img
+                              src={scene.backgroundUrl}
+                              alt="Scene background"
+                              className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Scene Settings Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="bg-white p-4 rounded-lg border border-purple-100">
+                          <label className="text-sm font-medium text-purple-900 mb-2 flex items-center gap-2">
+                            <FontAwesomeIcon icon={faSun} className="text-purple-600" />
+                            Time of Day
+                          </label>
+                          <select
+                            className="w-full p-2.5 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            value={scene.timeOfDay}
+                            onChange={(e) => {
+                              const value = e.target.value as Scene['timeOfDay'];
+                              const updatedScenes = [...script.scenes];
+                              updatedScenes[sceneIndex].timeOfDay = value;
+                              setScript(prev => ({
+                                ...prev,
+                                scenes: updatedScenes
+                              }));
+                            }}
+                          >
+                            <option value="day">Day</option>
+                            <option value="night">Night</option>
+                            <option value="sunset">Sunset</option>
+                            <option value="sunrise">Sunrise</option>
+                          </select>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-lg border border-purple-100">
+                          <label className="text-sm font-medium text-purple-900 mb-2 flex items-center gap-2">
+                            <FontAwesomeIcon icon={faCloud} className="text-purple-600" />
+                            Weather
+                          </label>
+                          <select
+                            className="w-full p-2.5 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            value={scene.weather}
+                            onChange={(e) => {
+                              const value = e.target.value as SceneScript['weather'];
+                              const updatedScenes = [...script.scenes];
+                              updatedScenes[sceneIndex].weather = value;
+                              setScript(prev => ({
+                                ...prev,
+                                scenes: updatedScenes
+                              }));
+                            }}
+                          >
+                            <option value="clear">Clear</option>
+                            <option value="cloudy">Cloudy</option>
+                            <option value="rain">Rain</option>
+                            <option value="snow">Snow</option>
+                            <option value="foggy">Foggy</option>
+                            <option value="stormy">Stormy</option>
+                          </select>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-lg border border-purple-100">
+                          <label className="text-sm font-medium text-purple-900 mb-2 flex items-center gap-2">
+                            <FontAwesomeIcon icon={faClock} className="text-purple-600" />
+                            Duration
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min="1"
+                              max="60"
+                              step="0.1"
+                              className="flex-1 h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                              value={scene.duration}
+                              onChange={(e) => {
+                                const updatedScenes = [...script.scenes];
+                                updatedScenes[sceneIndex].duration = Number(e.target.value);
+                                setScript(prev => ({
+                                  ...prev,
+                                  scenes: updatedScenes
+                                }));
+                              }}
+                            />
+                            <span className="font-mono text-sm bg-purple-50 px-2 py-1 rounded min-w-[60px] text-center">
+                              {scene.duration.toFixed(1)}s
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Timeline */}
+                      <div className="bg-white p-4 rounded-lg border border-purple-100">
+                        <SceneTimeline
+                          scene={{
+                            ...scene,
+                            id: scene.sceneId
+                          }}
+                          duration={scene.duration}
+                          currentTime={currentTime}
+                          onTimeUpdate={handleTimeChange}
+                          onSceneUpdate={(updatedScene) => handleSceneUpdate({
+                            ...updatedScene,
+                            sceneId: scene.sceneId
+                          })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar - Character List */}
+          <div className="col-span-4">
+            <div className="bg-white rounded-lg shadow-sm p-6 sticky top-24">
+              <h2 className="text-xl font-bold text-purple-900 mb-6 flex items-center gap-2">
+                <FontAwesomeIcon icon={faUser} className="text-purple-600" />
+                Characters
+              </h2>
+              {characters.length === 0 ? (
+                <div className="text-center py-8 text-purple-400">
+                  <FontAwesomeIcon icon={faUserPlus} className="text-4xl mb-2" />
+                  <p>No characters created yet</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {characters.map(char => (
+                    <div
+                      key={char.id}
+                      className="bg-white p-4 rounded-lg border border-purple-100 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="relative w-12 h-12 rounded-full overflow-hidden bg-purple-50">
+                          <Image
+                            src={char.imageUrl}
+                            alt={char.name}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-purple-900">{char.name}</h3>
+                          <p className="text-sm text-purple-600">
+                            {char.features.expression}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Dialogue, VoiceSettings } from '../types/animation';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faMicrophone, faPlay } from '@fortawesome/free-solid-svg-icons';
 
 interface VoiceOverGeneratorProps {
   dialogue: Dialogue;
@@ -16,18 +18,16 @@ export default function VoiceOverGenerator({
   onPreview,
   onGenerate
 }: VoiceOverGeneratorProps) {
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewPlaying, setPreviewPlaying] = useState(false);
-  const audioContext = useRef<AudioContext | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
     const loadVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      setAvailableVoices(voices);
+      setAvailableVoices(window.speechSynthesis.getVoices());
     };
-
+    
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
 
@@ -43,50 +43,48 @@ export default function VoiceOverGenerator({
       return;
     }
 
+    setPreviewPlaying(true);
     const utterance = new SpeechSynthesisUtterance(dialogue.text);
     utterance.voice = availableVoices.find(v => v.name === dialogue.voiceSettings.voice) || null;
     utterance.pitch = dialogue.voiceSettings.pitch;
     utterance.rate = dialogue.voiceSettings.speed;
-    utterance.volume = dialogue.voiceSettings.emphasis ?? 1.0;
 
-    utterance.onend = () => setPreviewPlaying(false);
-    setPreviewPlaying(true);
+    utterance.onend = () => {
+      setPreviewPlaying(false);
+    };
+
     window.speechSynthesis.speak(utterance);
-    onPreview();
   };
 
   const generateAudio = async () => {
-    if (!audioContext.current) {
-      audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-
-    setIsGenerating(true);
-
     try {
-      const ctx = audioContext.current;
-      const destination = ctx.createMediaStreamDestination();
-      const chunks: BlobPart[] = [];
+      setIsGenerating(true);
+      
+      // Create oscillator for visual feedback
+      const audioContext = new AudioContext();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0; // Mute the oscillator
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
 
-      mediaRecorder.current = new MediaRecorder(destination.stream);
+      const stream = oscillator.connect(gainNode).connect(audioContext.destination);
+      mediaRecorder.current = new MediaRecorder(stream as unknown as MediaStream);
+      
+      const chunks: BlobPart[] = [];
       mediaRecorder.current.ondataavailable = (e) => chunks.push(e.data);
       mediaRecorder.current.onstop = async () => {
-        const audioBlob = new Blob(chunks, { type: 'audio/wav' });
-        await onGenerate(audioBlob);
+        const blob = new Blob(chunks, { type: 'audio/wav' });
+        await onGenerate(blob);
         setIsGenerating(false);
       };
 
       mediaRecorder.current.start();
-
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.connect(gain);
-      gain.connect(destination);
-
+      
       const utterance = new SpeechSynthesisUtterance(dialogue.text);
       utterance.voice = availableVoices.find(v => v.name === dialogue.voiceSettings.voice) || null;
       utterance.pitch = dialogue.voiceSettings.pitch;
       utterance.rate = dialogue.voiceSettings.speed;
-      utterance.volume = dialogue.voiceSettings.emphasis ?? 1.0;
 
       utterance.onend = () => {
         setTimeout(() => {
@@ -104,96 +102,109 @@ export default function VoiceOverGenerator({
   };
 
   return (
-    <div className="p-4 border rounded-lg bg-white space-y-4">
-      <h3 className="text-lg font-medium mb-4">Voice Settings</h3>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium mb-1">Voice</label>
-          <select
-            className="w-full p-2 border rounded"
-            value={dialogue.voiceSettings.voice}
-            onChange={(e) => onVoiceSettingsChange({
-              ...dialogue.voiceSettings,
-              voice: e.target.value
-            })}
-          >
-            {availableVoices.map(voice => (
-              <option key={voice.name} value={voice.name}>
-                {voice.name} ({voice.lang})
-              </option>
-            ))}
-          </select>
-        </div>
+    <div className="space-y-8">
+      <div className="bg-gradient-to-r from-purple-50 to-purple-100/50 rounded-lg p-6">
+        <h3 className="text-xl font-semibold mb-6 text-purple-900">Voice Settings</h3>
         
-        <div>
-          <label className="block text-sm font-medium mb-1">Pitch</label>
-          <input
-            type="range"
-            min="0.5"
-            max="2"
-            step="0.1"
-            className="w-full"
-            value={dialogue.voiceSettings.pitch}
-            onChange={(e) => onVoiceSettingsChange({
-              ...dialogue.voiceSettings,
-              pitch: Number(e.target.value)
-            })}
-          />
-          <span className="text-sm">{dialogue.voiceSettings.pitch}</span>
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium mb-1">Speed</label>
-          <input
-            type="range"
-            min="0.5"
-            max="2"
-            step="0.1"
-            className="w-full"
-            value={dialogue.voiceSettings.speed}
-            onChange={(e) => onVoiceSettingsChange({
-              ...dialogue.voiceSettings,
-              speed: Number(e.target.value)
-            })}
-          />
-          <span className="text-sm">{dialogue.voiceSettings.speed}x</span>
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium mb-1">Emphasis</label>
-          <input
-            type="range"
-            min="0"
-            max="2"
-            step="0.1"
-            className="w-full"
-            value={dialogue.voiceSettings.emphasis ?? 1}
-            onChange={(e) => onVoiceSettingsChange({
-              ...dialogue.voiceSettings,
-              emphasis: Number(e.target.value)
-            })}
-          />
-          <span className="text-sm">{dialogue.voiceSettings.emphasis ?? 1}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-purple-900 mb-2">Voice</label>
+              <select
+                className="w-full p-2.5 bg-white border border-purple-200 rounded-lg shadow-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                value={dialogue.voiceSettings.voice}
+                onChange={(e) => onVoiceSettingsChange({
+                  ...dialogue.voiceSettings,
+                  voice: e.target.value
+                })}
+              >
+                {availableVoices.map(voice => (
+                  <option key={voice.name} value={voice.name}>
+                    {voice.name} ({voice.lang})
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-purple-900 mb-2">
+                Pitch <span className="text-purple-600 ml-1">{dialogue.voiceSettings.pitch}x</span>
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                value={dialogue.voiceSettings.pitch}
+                onChange={(e) => onVoiceSettingsChange({
+                  ...dialogue.voiceSettings,
+                  pitch: Number(e.target.value)
+                })}
+              />
+            </div>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-purple-900 mb-2">
+                Speed <span className="text-purple-600 ml-1">{dialogue.voiceSettings.speed}x</span>
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                value={dialogue.voiceSettings.speed}
+                onChange={(e) => onVoiceSettingsChange({
+                  ...dialogue.voiceSettings,
+                  speed: Number(e.target.value)
+                })}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-purple-900 mb-2">
+                Emphasis <span className="text-purple-600 ml-1">{dialogue.voiceSettings.emphasis ?? 1}x</span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                value={dialogue.voiceSettings.emphasis ?? 1}
+                onChange={(e) => onVoiceSettingsChange({
+                  ...dialogue.voiceSettings,
+                  emphasis: Number(e.target.value)
+                })}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="flex gap-4 mt-4">
+      <div className="flex flex-col sm:flex-row gap-4 justify-end">
         <button
           onClick={handlePreview}
-          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded"
+          className="inline-flex items-center justify-center px-4 py-2.5 border border-purple-200 text-sm font-medium rounded-lg text-purple-700 bg-white hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
           disabled={isGenerating}
         >
+          <FontAwesomeIcon icon={faPlay} className="mr-2" />
           {previewPlaying ? 'Stop Preview' : 'Preview'}
         </button>
         
         <button
           onClick={generateAudio}
           disabled={isGenerating}
-          className={`px-4 py-2 text-white rounded ${
-            isGenerating ? 'bg-blue-300' : 'bg-blue-500 hover:bg-blue-600'
+          className={`inline-flex items-center justify-center px-4 py-2.5 text-sm font-medium rounded-lg text-white ${
+            isGenerating
+              ? 'bg-purple-400 cursor-not-allowed'
+              : 'bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500'
           }`}
         >
+          <FontAwesomeIcon icon={faMicrophone} className={`mr-2 ${isGenerating ? 'animate-pulse' : ''}`} />
           {isGenerating ? 'Generating...' : 'Generate Audio'}
         </button>
       </div>

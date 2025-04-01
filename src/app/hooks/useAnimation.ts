@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Action, Position3D, Rotation3D } from '../types/animation';
+import { Action, Vector3, ActionType, ActionParams, TransformActionParams, ScaleActionParams, GestureActionParams, ExpressionActionParams, LipsyncActionParams } from '../types/animation';
 
 interface AnimationState {
-  position: Position3D;
-  rotation: Rotation3D;
+  position: Vector3;
+  rotation: Vector3;
   scale: number;
   expression: string;
   gesture: string;
@@ -27,12 +27,7 @@ function interpolate(start: number, end: number, progress: number, easing: strin
   }
 }
 
-function interpolatePosition(
-  start: Position3D,
-  end: Position3D,
-  progress: number,
-  easing: string
-): Position3D {
+function interpolateVector3(start: Vector3, end: Vector3, progress: number, easing: string): Vector3 {
   return {
     x: interpolate(start.x, end.x, progress, easing),
     y: interpolate(start.y, end.y, progress, easing),
@@ -40,17 +35,24 @@ function interpolatePosition(
   };
 }
 
-function interpolateRotation(
-  start: Rotation3D,
-  end: Rotation3D,
-  progress: number,
-  easing: string
-): Rotation3D {
-  return {
-    x: interpolate(start.x, end.x, progress, easing),
-    y: interpolate(start.y, end.y, progress, easing),
-    z: interpolate(start.z, end.z, progress, easing),
-  };
+function isTransformParams(params: ActionParams): params is TransformActionParams {
+  return 'from' in params && 'to' in params && typeof (params as TransformActionParams).from === 'object';
+}
+
+function isScaleParams(params: ActionParams): params is ScaleActionParams {
+  return 'from' in params && 'to' in params && typeof (params as ScaleActionParams).from === 'number';
+}
+
+function isGestureParams(params: ActionParams): params is GestureActionParams {
+  return 'gesture' in params;
+}
+
+function isExpressionParams(params: ActionParams): params is ExpressionActionParams {
+  return 'expression' in params;
+}
+
+function isLipsyncParams(params: ActionParams): params is LipsyncActionParams {
+  return 'from' in params && 'to' in params && typeof (params as LipsyncActionParams).from === 'number';
 }
 
 export function useAnimation(
@@ -86,10 +88,10 @@ export function useAnimation(
 
       switch (action.type) {
         case 'move':
-          if (action.params.from && action.params.to) {
-            newState.position = interpolatePosition(
-              action.params.from as Position3D,
-              action.params.to as Position3D,
+          if (isTransformParams(action.params)) {
+            newState.position = interpolateVector3(
+              action.params.from,
+              action.params.to,
               progress,
               easing
             );
@@ -97,10 +99,10 @@ export function useAnimation(
           break;
 
         case 'rotate':
-          if (action.params.from && action.params.to) {
-            newState.rotation = interpolateRotation(
-              action.params.from as Rotation3D,
-              action.params.to as Rotation3D,
+          if (isTransformParams(action.params)) {
+            newState.rotation = interpolateVector3(
+              action.params.from,
+              action.params.to,
               progress,
               easing
             );
@@ -108,22 +110,36 @@ export function useAnimation(
           break;
 
         case 'scale':
-          if (typeof action.params.from === 'number' && typeof action.params.to === 'number') {
-            newState.scale = interpolate(action.params.from, action.params.to, progress, easing);
+          if (isScaleParams(action.params)) {
+            newState.scale = interpolate(
+              action.params.from,
+              action.params.to,
+              progress,
+              easing
+            );
           }
           break;
 
         case 'gesture':
-          newState.gesture = action.params.gesture || 'idle';
+          if (isGestureParams(action.params)) {
+            newState.gesture = action.params.gesture;
+          }
           break;
 
         case 'expression':
-          newState.expression = action.params.expression || 'neutral';
+          if (isExpressionParams(action.params)) {
+            newState.expression = action.params.expression;
+          }
           break;
 
         case 'lipsync':
-          if (typeof action.params.from === 'number' && typeof action.params.to === 'number') {
-            newState.lipsync = interpolate(action.params.from, action.params.to, progress, easing);
+          if (isLipsyncParams(action.params)) {
+            newState.lipsync = interpolate(
+              action.params.from,
+              action.params.to,
+              progress,
+              easing
+            );
           }
           break;
       }

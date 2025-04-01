@@ -1,6 +1,6 @@
 'use server';
 
-import { createScript, getAllCharacters } from '@/lib/database-helpers';
+import { createScript, createScene, getAllCharacters } from '@/lib/database-helpers';
 
 export async function initializeNewScript() {
   try {
@@ -40,5 +40,32 @@ export async function initializeNewScript() {
   } catch (error) {
     console.error('Failed to initialize script:', error);
     throw error;
+  }
+}
+
+export async function createNewScript(data: {
+  title: string;
+  fps: number;
+  resolution: { width: number; height: number; }
+}) {
+  try {
+    // Create the script
+    const script = await createScript(data);
+
+    // Create an initial empty scene
+    await createScene({
+      scriptId: script.id,
+      background: 'default_background',
+      lighting: 'natural',
+      timeOfDay: 'day',
+      weather: 'clear',
+      duration: 5.0,
+      order: 1
+    });
+
+    return script;
+  } catch (error) {
+    console.error('Failed to create script:', error);
+    throw new Error('Failed to create script');
   }
 }
