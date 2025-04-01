@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import { Character, CharacterGenerationPrompt } from '../types/character';
+import { Emotion } from '../types/animation';
 import { generateCharacter } from '../services/aiService';
+import { createCharacter } from '@/lib/database-helpers';
 import Image from 'next/image';
 
 interface CharacterCreatorProps {
-  onCharacterCreated: (character: Character) => void;
+  onCharacterCreated: (character: Character & { id: string }) => void;
 }
 
 export default function CharacterCreator({ onCharacterCreated }: CharacterCreatorProps) {
@@ -29,8 +31,26 @@ export default function CharacterCreator({ onCharacterCreated }: CharacterCreato
       setIsLoading(true);
       setError(null);
       const generatedCharacter = await generateCharacter(prompt);
-      setCharacter(generatedCharacter);
-      onCharacterCreated(generatedCharacter);
+      
+      // Store the character in the database
+      const storedCharacter = await createCharacter({
+        name: generatedCharacter.name || prompt.description.split(' ').slice(0, 2).join(' '),
+        model: JSON.stringify({
+          features: generatedCharacter.features,
+          imageUrl: generatedCharacter.imageUrl,
+          style: prompt.style,
+          mood: prompt.mood
+        })
+      });
+
+      // Combine the generated character with the database ID
+      const finalCharacter = {
+        ...generatedCharacter,
+        id: storedCharacter.id
+      };
+
+      setCharacter(finalCharacter);
+      onCharacterCreated(finalCharacter);
     } catch (err) {
       setError('Failed to generate character. Please try again.');
       console.error(err);
@@ -62,7 +82,7 @@ export default function CharacterCreator({ onCharacterCreated }: CharacterCreato
               id="style"
               className="w-full p-2 border rounded"
               value={prompt.style}
-              onChange={(e) => setPrompt({ ...prompt, style: e.target.value })}
+              onChange={(e) => setPrompt({ ...prompt, style: e.target.value as 'cartoon' | 'anime' | 'realistic' | 'pixel-art' })}
             >
               <option value="cartoon">Cartoon</option>
               <option value="anime">Anime</option>
@@ -79,13 +99,15 @@ export default function CharacterCreator({ onCharacterCreated }: CharacterCreato
               id="mood"
               className="w-full p-2 border rounded"
               value={prompt.mood}
-              onChange={(e) => setPrompt({ ...prompt, mood: e.target.value })}
+              onChange={(e) => setPrompt({ ...prompt, mood: e.target.value as Emotion })}
             >
               <option value="neutral">Neutral</option>
               <option value="happy">Happy</option>
               <option value="sad">Sad</option>
               <option value="angry">Angry</option>
               <option value="surprised">Surprised</option>
+              <option value="scared">Scared</option>
+              <option value="disgusted">Disgusted</option>
             </select>
           </div>
         </div>

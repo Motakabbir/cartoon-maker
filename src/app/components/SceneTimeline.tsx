@@ -2,18 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Scene, Dialogue, Action } from '../types/animation';
+import { updateDialogue, deleteDialogue, updateAction, deleteAction, createDialogue, createAction } from '@/lib/database-helpers';
 
 interface SceneTimelineProps {
   scene: Scene;
   duration: number;
   currentTime: number;
   onTimeUpdate: (time: number) => void;
-  onDialogueAdd: (dialogue: Dialogue) => void;
-  onActionAdd: (action: Action) => void;
-  onDialogueEdit: (index: number, dialogue: Dialogue) => void;
-  onActionEdit: (index: number, action: Action) => void;
-  onDialogueDelete: (index: number) => void;
-  onActionDelete: (index: number) => void;
+  onSceneUpdate: (updatedScene: Scene) => void;
 }
 
 export default function SceneTimeline({
@@ -21,16 +17,12 @@ export default function SceneTimeline({
   duration,
   currentTime,
   onTimeUpdate,
-  onDialogueAdd,
-  onActionAdd,
-  onDialogueEdit,
-  onActionEdit,
-  onDialogueDelete,
-  onActionDelete
+  onSceneUpdate
 }: SceneTimelineProps) {
   const [selectedType, setSelectedType] = useState<'dialogue' | 'action' | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     const handleMouseUp = () => {
@@ -97,6 +89,148 @@ export default function SceneTimeline({
     };
   };
 
+  const handleDialogueEdit = async (index: number, dialogue: Dialogue) => {
+    if (!dialogue.id) return;
+    setIsUpdating(true);
+    
+    try {
+      await updateDialogue(dialogue.id, {
+        text: dialogue.text,
+        emotion: dialogue.emotion,
+        voiceSettings: dialogue.voiceSettings as unknown as Record<string, unknown>,
+        startTime: dialogue.startTime ?? null,
+        duration: dialogue.duration ?? null
+      });
+
+      const updatedDialogues = [...scene.dialogues];
+      updatedDialogues[index] = dialogue;
+      onSceneUpdate({
+        ...scene,
+        dialogues: updatedDialogues
+      });
+    } catch (error) {
+      console.error('Failed to update dialogue:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDialogueDelete = async (index: number) => {
+    const dialogueToDelete = scene.dialogues[index];
+    if (!dialogueToDelete?.id) return;
+
+    setIsUpdating(true);
+    try {
+      await deleteDialogue(dialogueToDelete.id);
+      
+      const updatedDialogues = scene.dialogues.filter((_, i) => i !== index);
+      onSceneUpdate({
+        ...scene,
+        dialogues: updatedDialogues
+      });
+      setSelectedType(null);
+      setSelectedIndex(null);
+    } catch (error) {
+      console.error('Failed to delete dialogue:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleActionEdit = async (index: number, action: Action) => {
+    if (!action.id) return;
+    setIsUpdating(true);
+    
+    try {
+      await updateAction(action.id, {
+        type: action.type,
+        params: action.params as unknown as Record<string, unknown>,
+        startTime: action.startTime,
+        duration: action.duration
+      });
+
+      const updatedActions = [...scene.actions];
+      updatedActions[index] = action;
+      onSceneUpdate({
+        ...scene,
+        actions: updatedActions
+      });
+    } catch (error) {
+      console.error('Failed to update action:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleActionDelete = async (index: number) => {
+    const actionToDelete = scene.actions[index];
+    if (!actionToDelete?.id) return;
+
+    setIsUpdating(true);
+    try {
+      await deleteAction(actionToDelete.id);
+      
+      const updatedActions = scene.actions.filter((_, i) => i !== index);
+      onSceneUpdate({
+        ...scene,
+        actions: updatedActions
+      });
+      setSelectedType(null);
+      setSelectedIndex(null);
+    } catch (error) {
+      console.error('Failed to delete action:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDialogueAdd = async (dialogue: Dialogue) => {
+    setIsUpdating(true);
+    try {
+      const createdDialogue = await createDialogue({
+        sceneId: scene.id,
+        characterId: dialogue.characterId,
+        text: dialogue.text,
+        emotion: dialogue.emotion,
+        voiceSettings: dialogue.voiceSettings as unknown as Record<string, unknown>,
+        startTime: dialogue.startTime ?? null,
+        duration: dialogue.duration ?? null
+      });
+
+      onSceneUpdate({
+        ...scene,
+        dialogues: [...scene.dialogues, { ...dialogue, id: createdDialogue.id }]
+      });
+    } catch (error) {
+      console.error('Failed to add dialogue:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleActionAdd = async (action: Action) => {
+    setIsUpdating(true);
+    try {
+      const createdAction = await createAction({
+        sceneId: scene.id,
+        characterId: action.characterId,
+        type: action.type,
+        params: action.params as unknown as Record<string, unknown>,
+        startTime: action.startTime,
+        duration: action.duration
+      });
+
+      onSceneUpdate({
+        ...scene,
+        actions: [...scene.actions, { ...action, id: createdAction.id }]
+      });
+    } catch (error) {
+      console.error('Failed to add action:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4">
@@ -114,7 +248,7 @@ export default function SceneTimeline({
               startTime: currentTime,
               duration: 2
             };
-            onDialogueAdd(newDialogue);
+            handleDialogueAdd(newDialogue);
           }}
           className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
@@ -133,7 +267,7 @@ export default function SceneTimeline({
               startTime: currentTime,
               duration: 1
             };
-            onActionAdd(newAction);
+            handleActionAdd(newAction);
           }}
           className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
         >
@@ -194,14 +328,15 @@ export default function SceneTimeline({
                     ...scene.dialogues[selectedIndex],
                     text: e.target.value
                   };
-                  onDialogueEdit(selectedIndex, updatedDialogue);
+                  handleDialogueEdit(selectedIndex, updatedDialogue);
                 }}
               />
               <button
-                onClick={() => onDialogueDelete(selectedIndex)}
-                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                onClick={() => handleDialogueDelete(selectedIndex)}
+                disabled={isUpdating}
+                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-red-300"
               >
-                Delete
+                {isUpdating ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           ) : (
@@ -215,7 +350,7 @@ export default function SceneTimeline({
                     ...scene.actions[selectedIndex],
                     type: e.target.value as Action['type']
                   };
-                  onActionEdit(selectedIndex, updatedAction);
+                  handleActionEdit(selectedIndex, updatedAction);
                 }}
               >
                 <option value="move">Move</option>
@@ -226,10 +361,11 @@ export default function SceneTimeline({
                 <option value="lipsync">Lip Sync</option>
               </select>
               <button
-                onClick={() => onActionDelete(selectedIndex)}
-                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                onClick={() => handleActionDelete(selectedIndex)}
+                disabled={isUpdating}
+                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-red-300"
               >
-                Delete
+                {isUpdating ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           )}

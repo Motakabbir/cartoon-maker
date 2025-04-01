@@ -1,0 +1,91 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Character {
+  id          String       @id @default(uuid())
+  name        String
+  model       String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  appearances SceneCharacter[]
+  dialogues   Dialogue[]
+  actions     Action[]
+}
+
+model Script {
+  id          String   @id @default(uuid())
+  title       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  scenes      Scene[]
+  fps         Int      @default(30)
+  resolution  Json     // {width: number, height: number}
+}
+
+model Scene {
+  id          String       @id @default(uuid())
+  scriptId    String
+  script      Script       @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  background  String
+  lighting    String
+  timeOfDay   String
+  weather     String
+  duration    Float
+  order       Int
+  characters  SceneCharacter[]
+  dialogues   Dialogue[]
+  actions     Action[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model SceneCharacter {
+  id          String    @id @default(uuid())
+  sceneId     String
+  scene       Scene     @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  position    Json      // {x: number, y: number, z: number}
+  rotation    Json      // {x: number, y: number, z: number}
+  scale       Float
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Dialogue {
+  id            String    @id @default(uuid())
+  sceneId       String
+  scene         Scene     @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  characterId   String
+  character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  text          String
+  emotion       String
+  voiceSettings Json      // {voice: string, pitch: number, speed: number, emphasis?: number}
+  startTime     Float?
+  duration      Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Action {
+  id          String    @id @default(uuid())
+  sceneId     String
+  scene       Scene     @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  type        String
+  params      Json      // {from: number | Vector3, to: number | Vector3, easing?: string}
+  startTime   Float
+  duration    Float
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}

@@ -148,7 +148,7 @@ async function drawCharacter(
 }
 
 // Helper functions for interpolation
-function interpolatePosition(from: any, to: any, progress: number, easing: string) {
+function interpolatePosition(from: Vector3, to: Vector3, progress: number, easing: string): Vector3 {
   return {
     x: from.x + (to.x - from.x) * applyEasing(progress, easing),
     y: from.y + (to.y - from.y) * applyEasing(progress, easing),
@@ -156,7 +156,7 @@ function interpolatePosition(from: any, to: any, progress: number, easing: strin
   };
 }
 
-function interpolateRotation(from: any, to: any, progress: number, easing: string) {
+function interpolateRotation(from: Vector3, to: Vector3, progress: number, easing: string): Vector3 {
   return {
     x: from.x + (to.x - from.x) * applyEasing(progress, easing),
     y: from.y + (to.y - from.y) * applyEasing(progress, easing),
@@ -164,7 +164,7 @@ function interpolateRotation(from: any, to: any, progress: number, easing: strin
   };
 }
 
-function interpolateScale(from: number, to: number, progress: number, easing: string) {
+function interpolateScale(from: number, to: number, progress: number, easing: string): number {
   return from + (to - from) * applyEasing(progress, easing);
 }
 

@@ -1,69 +1,32 @@
-export type Lighting = 'bright' | 'dim' | 'dark' | 'natural';
-export type TimeOfDay = 'dawn' | 'day' | 'dusk' | 'night';
-export type Weather = 'clear' | 'rain' | 'snow' | 'cloudy';
-
 export interface Scene {
   id: string;
   background: string;
-  backgroundUrl?: string;
-  lighting: Lighting;
-  weather?: Weather;
-  timeOfDay: TimeOfDay;
-  characters: CharacterPosition[];
+  lighting: 'natural' | 'studio' | 'dramatic' | 'dark';
+  timeOfDay: 'day' | 'night' | 'sunset' | 'sunrise';
+  duration: number;
+  characters: SceneCharacter[];
   dialogues: Dialogue[];
   actions: Action[];
-  duration: number;
 }
 
-export interface CharacterPosition {
+export interface SceneCharacter {
   characterId: string;
-  position: Position3D;
-  rotation: Rotation3D;
-  scale?: number; // Optional with implicit default of 1
+  position: Vector3;
+  rotation: Vector3;
+  scale: number;
 }
 
-export interface Position3D {
+export interface Vector3 {
   x: number;
   y: number;
   z: number;
-}
-
-export interface Rotation3D {
-  x: number;
-  y: number;
-  z: number;
-}
-
-export interface Script {
-  id: string;
-  scenes: SceneScript[];
-  duration: number;
-  resolution: Resolution;
-  fps: number;
-}
-
-export interface Resolution {
-  width: number;
-  height: number;
-}
-
-export interface SceneScript {
-  sceneId: string;
-  duration: number;
-  background: string;
-  backgroundUrl?: string;
-  lighting: Scene['lighting'];
-  timeOfDay: Scene['timeOfDay'];
-  weather?: Scene['weather'];
-  characters: CharacterPosition[];
-  dialogues: Dialogue[];
-  actions: Action[];
 }
 
 export interface Dialogue {
+  id?: string;
   characterId: string;
   text: string;
-  emotion: 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised';
+  emotion: Emotion;
   voiceSettings: VoiceSettings;
   startTime?: number;
   duration?: number;
@@ -76,7 +39,10 @@ export interface VoiceSettings {
   emphasis?: number;
 }
 
+export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'scared' | 'disgusted';
+
 export interface Action {
+  id?: string;
   characterId: string;
   type: ActionType;
   params: ActionParams;
@@ -87,17 +53,37 @@ export interface Action {
 export type ActionType = 'move' | 'rotate' | 'scale' | 'gesture' | 'expression' | 'lipsync';
 
 export interface ActionParams {
-  from?: Position3D | Rotation3D | number;
-  to?: Position3D | Rotation3D | number;
-  gesture?: string;
-  expression?: string;
+  from: number | Vector3;
+  to: number | Vector3;
   easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
 }
 
-export interface VideoExportSettings {
+export interface GestureParams extends ActionParams {
+  gesture: 'wave' | 'point' | 'clap' | 'jump' | 'dance';
+  intensity: number;
+}
+
+export interface ExpressionParams extends ActionParams {
+  expression: Emotion;
+  intensity: number;
+}
+
+export interface Resolution {
+  width: number;
+  height: number;
+}
+
+export interface Script {
+  id: string;
+  title?: string;
+  scenes: SceneScript[];
+  duration: number;
   resolution: Resolution;
   fps: number;
-  format: 'mp4' | 'webm';
-  quality: number;
-  audioEnabled: boolean;
+}
+
+export interface SceneScript extends Omit<Scene, 'id'> {
+  sceneId: string;
+  weather: 'clear' | 'rain' | 'snow' | 'cloudy';
+  backgroundUrl?: string;
 }
