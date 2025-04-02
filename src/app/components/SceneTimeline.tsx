@@ -168,12 +168,16 @@ export default function SceneTimeline({
 
   const handleActionAdd = async () => {
     if (!scene.id) return;
+    if (!scene.characters || scene.characters.length === 0) {
+      setError('Please add at least one character to the scene before creating actions');
+      return;
+    }
     setIsUpdating(true);
     setError(null);
 
     try {
       const newAction: Omit<Action, 'id'> = {
-        characterId: scene.characters[0]?.characterId || '',
+        characterId: scene.characters[0].characterId,
         type: 'move',
         params: createDefaultParams('move'),
         startTime: currentTime,

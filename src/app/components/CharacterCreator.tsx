@@ -3,14 +3,13 @@
 import { useState } from 'react';
 import { Character, CharacterGenerationPrompt } from '../types/character';
 import { Emotion } from '../types/animation';
-import { generateCharacter } from '../services/aiService';
-import { createNewCharacter } from '@/app/actions/character-actions';
+import { generateCharacterServerAction } from '../actions/character-actions';
 import Image from 'next/image';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMagic, faUser, faTheaterMasks, faPalette } from '@fortawesome/free-solid-svg-icons';
 
 interface CharacterCreatorProps {
-  onCharacterCreated: (character: Character & { id: string }) => void;
+  onCharacterCreated: (character: Character) => void;
 }
 
 export default function CharacterCreator({ onCharacterCreated }: CharacterCreatorProps) {
@@ -32,26 +31,10 @@ export default function CharacterCreator({ onCharacterCreated }: CharacterCreato
     try {
       setIsLoading(true);
       setError(null);
-      const generatedCharacter = await generateCharacter(prompt);
       
-      // Store the character using server action
-      const storedCharacter = await createNewCharacter({
-        name: generatedCharacter.name || prompt.description.split(' ').slice(0, 2).join(' '),
-        model: JSON.stringify({
-          features: generatedCharacter.features,
-          imageUrl: generatedCharacter.imageUrl,
-          style: prompt.style,
-          mood: prompt.mood
-        })
-      });
-
-      const finalCharacter = {
-        ...generatedCharacter,
-        id: storedCharacter.id
-      };
-
-      setCharacter(finalCharacter);
-      onCharacterCreated(finalCharacter);
+      const generatedCharacter = await generateCharacterServerAction(prompt);
+      setCharacter(generatedCharacter);
+      onCharacterCreated(generatedCharacter);
     } catch (err) {
       setError('Failed to generate character. Please try again.');
       console.error(err);
